@@ -361,6 +361,39 @@ class Database implements DatabaseInterface {
     private function logMigration($Migration) {
         $this->insert('migrations', ['migration' => $Migration]);
     }
+	
+	public function backupDatabase($backupFilePath) {
+        $sql = "SHOW TABLES";
+        $tables = $this->query($sql)->fetchAll(PDO::FETCH_COLUMN);
+        $backupData = "";
+
+        foreach ($tables as $table) {
+            $createTableSql = $this->query("SHOW CREATE TABLE {$table}")->fetch(PDO::FETCH_COLUMN, 1);
+            $backupData .= "{$createTableSql};\n\n";
+
+            $rows = $this->query("SELECT * FROM {$table}")->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($rows as $row) {
+                $values = array_map([$this->PDO, 'quote'], array_values($row));
+                $backupData .= "INSERT INTO {$table} VALUES (" . implode(", ", $values) . ");\n";
+            }
+            $backupData .= "\n\n";
+        }
+
+        file_put_contents($backupFilePath, $backupData);
+    }
+
+    public function restoreDatabase($backupFilePath) {
+        $sqls = file_get_contents($backupFilePath);
+        $this->beginTransaction();
+        try {
+            $this->PDO->exec($sqls);
+            $this->commit();
+        } catch (PDOException $e) {
+            $this->rollBack();
+            $this->handleError($e);
+        }
+    }
+	
 }
 
 ?>
